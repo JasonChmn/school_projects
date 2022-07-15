@@ -1,0 +1,216 @@
+#version 120
+
+#define MAX_LIGHTS 10
+
+uniform mat4 model;
+uniform vec3 cameraPosition;
+
+uniform sampler2D materialTex;
+uniform float materialShininess;
+
+
+uniform int numLights;
+struct Light {
+   vec4 position;
+   float attenuation;
+   float intensity;
+   vec3 colorLight;
+   float ambientValue;
+   int indexLight;
+   mat4x4 MVPmatrixLight;
+   // For area light
+   int isAreaLight;
+   int numberDivisionLightArea;
+   vec4 positionRight;
+   // for shadow
+   int hasShadow;
+};
+
+uniform Light listLights[MAX_LIGHTS];
+uniform sampler2D ShadowMap[MAX_LIGHTS];
+
+varying vec3 N;
+varying vec3 v;
+varying vec4 coordsShadowMap[MAX_LIGHTS];
+
+// Position of lights
+varying vec3 positionLightFrag[MAX_LIGHTS];
+
+// For area of light
+varying vec3 positionOnRightFrag[5];
+
+
+vec3 getValueFragAreaLight(vec3 left, vec3 right, vec3 frag, vec3 normal, Light light, vec3 surfaceColor, vec3 surfaceToCamera) {
+	float nbDivisionLength = light.numberDivisionLightArea;
+	vec3 leftToRight = right - left;
+	float step = 1 / (nbDivisionLength-1);
+	
+	vec3 vecStep = leftToRight * step;
+	vec3 fragToLeft = left - frag;
+	vec3 valueDivLight = light.colorLight * gl_FrontMaterial.diffuse.rgb * surfaceColor * light.intensity / nbDivisionLength;	// value of light with dot(normal,dirLight) = 1
+	
+	vec3 nextTest = fragToLeft;
+	float attenuationActual;
+	float dotNormalVec = 0;
+	vec3 valueLightTotal = vec3(0,0,0);
+	vec3 valueLightDiffuse = vec3(0,0,0);
+	vec3 valueLightSpecular = vec3(0,0,0);
+	float dotRV = 0;
+	for ( int cpt=0; cpt < nbDivisionLength; cpt++) {
+		dotNormalVec = dot(normalize(normal), normalize(nextTest));
+		if (dotNormalVec > 0.0f) {
+			attenuationActual = 1.0 / (1.0 + light.attenuation * pow(length(nextTest),2.0));
+			valueLightDiffuse = valueDivLight * dotNormalVec;
+
+			// SPECULAR
+			dotRV = dot(normalize(surfaceToCamera), -reflect(normalize(nextTest), normalize(N)));
+			float PhongRVcoeffient = max(0.0, dotRV);
+			valueLightSpecular = pow( PhongRVcoeffient , gl_FrontMaterial.shininess ) * light.colorLight * gl_FrontMaterial.specular.rgb;
+
+			valueLightTotal += (valueLightDiffuse + valueLightSpecular)*attenuationActual;
+		}
+		nextTest += vecStep;
+	}
+	vec3 lightOnFrag_ambient = light.colorLight * surfaceColor * light.ambientValue * light.intensity * gl_FrontMaterial.ambient.rgb;
+	// Return diffuse_specular_value + ambient
+	return valueLightTotal + lightOnFrag_ambient;
+	//return vec3(dotRV, dotRV, dotRV);
+}
+
+vec3 ApplyLight(Light light, vec3 surfaceColor, vec3 N, vec3 v, vec3 surfaceToCamera, int numLightList) {
+   float attenuationDistance;
+
+   vec3 posToLight, posToLight2;
+   vec3 test;
+   
+   vec3 lightOnFrag_diffuse = vec3(0.0f,0.0f,0.0f);
+   vec3 lightOnFrag_specular = vec3(0.0f,0.0f,0.0f);
+   vec3 lightOnFrag_diffSpec_Attenuation = vec3(0.0f,0.0f,0.0f);
+   
+   if (light.position.w == 0.0f) {
+	   // Directional Light
+	   //posToLight = gl_LightSource[light.indexLight].position.xyz;
+	   posToLight = positionLightFrag[numLightList] - v;
+       attenuationDistance = 1.0f;
+   } else {
+       // Point Light
+	   //posToLight = gl_LightSource[light.indexLight].position.xyz - v;
+	   posToLight = positionLightFrag[numLightList] - v;
+	   //test = posToLight - posToLight2;
+	   float distance = length(posToLight);
+	   attenuationDistance = 1.0 / (1.0 + light.attenuation * pow(distance,2.0));
+   }
+   
+   vec3 directionLight = normalize(posToLight);
+   float diffuseCoefficient = max(dot(N,directionLight),0.0);
+   if (diffuseCoefficient > 0) {
+		// DIFFUSE
+		lightOnFrag_diffuse = light.colorLight * gl_FrontMaterial.diffuse.rgb * surfaceColor * diffuseCoefficient * light.intensity;
+		// SPECULAR : only if point light
+		if (light.position.w != 0.0f) {
+			float dotRV = dot(surfaceToCamera, reflect(-directionLight, N));
+			float PhongRVcoeffient = max(0.0, dotRV);
+			lightOnFrag_specular = pow( PhongRVcoeffient , gl_FrontMaterial.shininess ) * light.colorLight * gl_FrontMaterial.specular.rgb;
+		}
+		lightOnFrag_diffSpec_Attenuation = attenuationDistance * (lightOnFrag_diffuse + lightOnFrag_specular);
+   }
+   
+   // AMBIENT
+   vec3 lightOnFrag_ambient = light.colorLight * surfaceColor * light.ambientValue * light.intensity * gl_FrontMaterial.ambient.rgb;
+   
+   return lightOnFrag_ambient + lightOnFrag_diffSpec_Attenuation;
+   //return gl_FrontMaterial.specular.rgb;
+   //return normalize(posToLight);
+   //return test;
+}
+
+
+float ShadowCalculation(vec4 fragPosLightSpace, int indexActualLight)
+{
+	float bias = 0.0002;
+	if (listLights[indexActualLight].position[3] == 0.0f) {
+		// Directional light
+		bias = 0.005f;
+	}
+
+    // perspective divide
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+	
+    // Transform to [0,1] range
+    projCoords = projCoords * 0.5 + 0.5;
+	
+    // Get value of depth on texture (value in [0,1] range)
+    float closestDepth = texture2D(ShadowMap[indexActualLight], projCoords.xy).r; 
+
+    // Get value of depth of current fragment (value in range [0,1])
+    float currentDepth = projCoords.z;
+	
+    
+    float shadow = 0.0f;
+
+    if (projCoords.x > 0 && projCoords.x < 1 && projCoords.y > 0 && projCoords.y < 1) {
+	// Value of shadow, up this value if you want a strongest shadow
+	shadow = 0.9f;
+    // Check if our fragment is in the shadow or not
+	if (currentDepth - bias <= closestDepth || currentDepth < 0.0f) {
+		// Depth of fragment is superior to the one on shadow map, so no shadow
+		shadow = 0.0f;
+	}
+    }
+    return shadow;
+}  
+
+float LinearizeDepth(float depth)
+{
+  float n = 0.1; // camera z near
+  float f = 15.0f; // camera z far
+  return (2.0 * n) / (f + n - depth * (f - n));	
+}
+
+void main(void)
+{
+	vec2 uv = gl_TexCoord[0].xy;
+	vec3 colorTex = texture2D(materialTex, uv).rgb;
+	vec3 surfaceToCamera = normalize(cameraPosition - v);
+	
+	vec3 linearColor = vec3(0);
+	float shadow = 0.0f;
+	if (numLights == 0) {
+		linearColor = vec3(0,0,0);
+	} else {
+		int cptLightArea = 0;
+		float distance;
+		vec3 valueLight;
+		for(int i = 0; i < numLights; ++i){
+			if ( listLights[i].isAreaLight == 1 || listLights[i].position.w == 0.0f || listLights[i].attenuation * pow(length(positionLightFrag[i] - v),2.0) < 12 ) {
+				// Calculate color with light
+				if (listLights[i].isAreaLight == 1) {
+					// vec3 left, vec3 right, vec3 frag, vec3 normal, Light light, vec3 surfaceColor
+					valueLight = getValueFragAreaLight(positionLightFrag[i], positionOnRightFrag[cptLightArea], v, N, listLights[i], colorTex, surfaceToCamera);
+					cptLightArea++;
+				} else {
+					valueLight = ApplyLight(listLights[i], colorTex, N, v, surfaceToCamera, i);
+				}
+				
+				// Calculate shadow
+				if (listLights[i].hasShadow == 1 && coordsShadowMap[i].w > 0) {
+					shadow = ShadowCalculation(coordsShadowMap[i], i);
+				}
+				
+				linearColor += valueLight * (1.0 - shadow);
+				shadow = 0.0f;
+			}
+		}
+	}
+   
+   // perspective divide
+    vec3 projCoords = coordsShadowMap[2].xyz / coordsShadowMap[2].w;
+    // Transform to [0,1] range
+    projCoords = projCoords * 0.5 + 0.5;
+	float closestDepth = texture2D(ShadowMap[2], projCoords.xy).r;
+   
+   gl_FragColor = vec4(linearColor, 1.0);
+   //gl_FragColor = vec4(closestDepth, closestDepth, closestDepth, 1.0f);
+   //gl_FragColor = vec4(projCoords, 1.0f);
+   //gl_FragColor = vec4(gl_FrontMaterial.shininess / 10.0f, gl_FrontMaterial.shininess / 10.0f, gl_FrontMaterial.shininess / 10.0f, 1.0f);
+}

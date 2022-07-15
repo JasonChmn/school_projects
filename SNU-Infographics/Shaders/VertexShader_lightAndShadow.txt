@@ -1,0 +1,57 @@
+#version 120
+
+uniform mat4 MVPmatrix;	// not used in this version of GLSL
+uniform mat4 InverseModelMatrix;
+
+#define MAX_LIGHTS 10
+uniform int numLights;
+struct Light {
+   vec4 position;
+   float attenuation;
+   float intensity;
+   vec3 colorLight;
+   float ambientValue;
+   mat4x4 MVPmatrixLight;
+   // For area light
+   int isAreaLight;
+   int numberDivisionLightArea;
+   vec4 positionRight;
+   // for shadow
+   int hasShadow;
+};
+uniform Light listLights[MAX_LIGHTS];
+
+varying vec3 N;
+varying vec3 v;
+varying vec4 coordsShadowMap[MAX_LIGHTS];
+
+
+
+// For area of light
+varying vec3 positionLightFrag[MAX_LIGHTS];
+varying vec3 positionOnRightFrag[5];	// Only five area lights
+
+void main(void)
+{
+   v = vec3(gl_ModelViewMatrix * gl_Vertex);       
+   N = normalize(gl_NormalMatrix * gl_Normal);
+   gl_TexCoord[0] = gl_MultiTexCoord0;
+   
+   int cptLightArea = 0;
+   // Find the coords on the shadowMap
+   for (int i=0; i<numLights; i++) {
+		positionLightFrag[i] = vec3( gl_ModelViewMatrix * InverseModelMatrix * listLights[i].position);
+		
+		if (listLights[i].isAreaLight == 1) {
+			positionOnRightFrag[cptLightArea] = vec3( gl_ModelViewMatrix * InverseModelMatrix * listLights[i].positionRight);
+			cptLightArea += 1;
+		}
+		
+		if (listLights[i].hasShadow == 1) {
+			coordsShadowMap[i] = listLights[i].MVPmatrixLight * gl_Vertex;
+		}
+   }
+   
+   //gl_Position = MVPmatrix * gl_Vertex;
+   gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+}

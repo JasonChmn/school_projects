@@ -1,0 +1,19 @@
+#version 120
+
+uniform float near; 
+uniform float far;
+uniform sampler2D depthSampler;
+
+float LinearizeDepth(vec2 uv)
+{
+  float n = near; // camera z near
+  float f = far; // camera z far
+  float z = texture2D(depthSampler, uv).x; // z is between [0,1], 0 on near, 1 on far
+  return (2.0 * n) / (f + n - z * (f - n));	
+}
+void main() 
+{ 
+  vec2 uv = gl_TexCoord[0].xy;	// Has been set in the vertex shader
+  float d = LinearizeDepth(uv);
+  gl_FragColor.rgb = vec3(d, d, d);
+}

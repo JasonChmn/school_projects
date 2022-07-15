@@ -1,0 +1,18 @@
+CHEMIN Jason
+
+Commands : 
+- 'd' to switch light point of view (Light selected with yellow sphere.
+- '1', '2' or '3' to active or desactivate lights\nPS : Light 1 and 2 are point lights, and 3 is directional.
+- Right Click to translate camera, and Left click to rotate.
+- Left click on lights (boxes) to move them. PS : blue box is directional light.
+
+Load model : class LoaderObj.h ( can load an object with : vertex, normal, texture, material )
+Load texture : LoaderTextureJPG.h ( can load a texture/image JPG with help of SOIL.h )
+Loader Shader : class LoaderShader.h ( can load a shader from a file)
+
+PS : In this project, we have only one shadowmap, so if an object is not in the shadow map (target on origin), no shadow will be calculated.
+
+You can actually change the object by modifying line 97 and 98 :
+std::string nameFolderObj = "Farmhouse/";
+std::string nameObj = "farmhouse_obj.obj";
+PS : If the model does not appear on your screen, he may be too small or too big (change the Scale of model : line 35)

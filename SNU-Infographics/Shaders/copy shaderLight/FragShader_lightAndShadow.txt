@@ -1,0 +1,85 @@
+#version 120
+
+#define MAX_LIGHTS 10
+
+// array of lights : only Point and directional
+
+uniform mat4 model;
+uniform vec3 cameraPosition;
+
+uniform sampler2D materialTex;
+uniform float materialShininess;
+
+
+uniform int numLights;
+struct Light {
+   vec4 position;
+   float attenuation;
+   float intensity;
+   vec3 colorLight;
+   float ambientValue;
+};
+
+uniform Light listLights[MAX_LIGHTS];
+
+varying vec3 fragNormal;
+varying vec3 fragPos;
+
+vec3 ApplyLight(Light light, vec3 surfaceColor, vec3 normal, vec3 surfacePos, vec3 surfaceToCamera) {
+    vec3 surfaceToLight;
+    float attenuation = 1.0;
+    if(light.position.w == 0.0) {
+        //directional light
+        surfaceToLight = normalize(light.position.xyz);	// It will emit everywhere, in every direction. It will depend only on the position of the light. (Like sun)
+        attenuation = 1.0; //no attenuation for directional lights
+    } else {
+        //point light
+        surfaceToLight = normalize(light.position.xyz - surfacePos);
+        float distanceToLight = length(surfaceToLight);
+        attenuation = 1.0 / (1.0 + light.attenuation * distanceToLight); //pow(distanceToLight, 2.0));
+    }
+
+    //ambient
+    vec3 ambient = light.colorLight * light.ambientValue * surfaceColor.rgb * light.intensity;
+
+    //diffuse
+    float diffuseCoefficient = max(0.0, dot(normal, surfaceToLight));
+	//diffuseCoefficient = 1.0f;
+    vec3 diffuse = diffuseCoefficient * surfaceColor.rgb * light.colorLight; //* light.intensity;
+    
+    //specular
+    //float specularCoefficient = 0.0;
+    //if(diffuseCoefficient > 0.0) {
+    //    specularCoefficient = pow(max(0.0, dot(surfaceToCamera, reflect(-surfaceToLight, normal))), materialShininess);
+    //}
+    vec3 specular = vec3(0,0,0); //specularCoefficient * light.colorLight * light.intensity;
+
+    //linear color (color before gamma correction)
+    return ambient + attenuation*diffuse; //+ attenuation*(diffuse + specular);
+}
+
+void main() {
+	vec2 uv = gl_TexCoord[0].xy;
+	vec3 colorTex = texture2D(materialTex, uv).rgb;
+	vec3 n = normalize(fragNormal);
+
+    vec3 surfacePos = fragPos;
+    vec3 surfaceToCamera = normalize(cameraPosition - surfacePos);
+
+
+    //combine color from all the lights
+    vec3 linearColor = vec3(0);
+    for(int i = 0; i < numLights; ++i){
+	// if Fragment is in depthMap of this light, then applyLight
+        linearColor += ApplyLight(listLights[i], colorTex, n, surfacePos, surfaceToCamera);
+    }
+
+    //final color (after gamma correction)
+    //vec3 gamma = vec3(1.0/2.2);
+    //out_color = vec4(pow(linearColor, gamma), surfaceColor.a);
+	gl_FragColor.rgb = linearColor;
+
+	//out_color = surfaceColor;
+	//out_color = texture2D(materialTex, fragTexCoord);
+
+}

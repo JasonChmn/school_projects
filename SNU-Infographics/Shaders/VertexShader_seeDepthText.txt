@@ -1,0 +1,8 @@
+#version 120
+
+void main(void)
+{
+  gl_Position = ftransform();	// Equivalent to : gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex
+				// the clip-space output position of the current vertex.
+  gl_TexCoord[0] = gl_MultiTexCoord0;	// Texture coordinate of texture unit 0 (vec4)
+}

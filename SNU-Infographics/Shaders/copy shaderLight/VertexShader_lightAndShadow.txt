@@ -1,0 +1,21 @@
+#version 120
+
+uniform mat4 MVPmatrix;
+
+//#define MAX_LIGHTS 10
+//uniform int numLights;
+//uniform mat4 lightSpaceMatrix[MAX_LIGHTS];
+//uniform sampler2D depthMap[MAX_LIGHTS];
+
+varying vec3 normal;
+varying vec3 fragPos;
+
+void main() {
+    // Pass some variables to the fragment shader
+    normal = normalize(gl_NormalMatrix * gl_Normal);
+    fragPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+    
+    // Apply all matrix transformations to vert
+    gl_Position = ftransform();
+}
